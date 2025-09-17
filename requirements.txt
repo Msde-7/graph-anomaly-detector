@@ -1,0 +1,11 @@
+streamlit==1.37.1
+networkx==3.3
+scikit-learn==1.5.2
+numpy==2.1.1
+pandas==2.2.2
+pyvis==0.3.2
+pydantic==2.9.2
+python-louvain==0.16
+matplotlib==3.9.2
+praw==7.7.1
+tweepy==4.14.0
