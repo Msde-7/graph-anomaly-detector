@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Tuple, Optional
+from typing import Tuple
 
 import time
 import pandas as pd
@@ -8,7 +8,7 @@ import networkx as nx
 
 try:
     import praw  # type: ignore
-except Exception as e:  # pragma: no cover
+except Exception:  # pragma: no cover
     praw = None
 
 

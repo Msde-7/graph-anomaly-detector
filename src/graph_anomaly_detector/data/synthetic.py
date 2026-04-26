@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Tuple, Dict, Any
+from typing import Tuple
 
-import math
 import random
 import numpy as np
 import pandas as pd
@@ -31,42 +30,35 @@ def generate_synthetic_graph(config: AppConfig) -> Tuple[nx.Graph, pd.DataFrame]
 
     human_count = config.num_humans
 
-    # Human subgraph (Erdos-Renyi)
-    human_graph = nx.fast_gnp_random_graph(human_count, config.human_edge_prob, seed=config.random_seed)
+    G = nx.fast_gnp_random_graph(human_count, config.human_edge_prob, seed=config.random_seed)
 
-    G = nx.Graph()
-    G.add_nodes_from(range(human_count))
-    G.add_edges_from(human_graph.edges())
-
-    meta_records = []
-    for node_id in range(human_count):
-        meta_records.append({"node": node_id, "is_bot": False, "bot_cluster_id": -1})
+    meta_records = [
+        {"node": node_id, "is_bot": False, "bot_cluster_id": -1}
+        for node_id in range(human_count)
+    ]
 
     next_node_id = human_count
+    humans = range(human_count)
 
-    # Bot clusters
     for cluster_idx in range(config.num_bot_clusters):
         cluster_size = _sample_cluster_size(config.avg_bot_cluster_size)
         bot_nodes = list(range(next_node_id, next_node_id + cluster_size))
         next_node_id += cluster_size
 
-        # Dense internal connections among bots in the same cluster
-        internal = nx.fast_gnp_random_graph(cluster_size, config.bot_internal_edge_prob, seed=config.random_seed + cluster_idx + 1)
-        internal = nx.relabel_nodes(internal, mapping={i: bot_nodes[i] for i in range(cluster_size)})
-
+        internal = nx.fast_gnp_random_graph(
+            cluster_size,
+            config.bot_internal_edge_prob,
+            seed=config.random_seed + cluster_idx + 1,
+        )
+        relabel = {i: bot_nodes[i] for i in range(cluster_size)}
         G.add_nodes_from(bot_nodes)
-        G.add_edges_from(internal.edges())
+        G.add_edges_from((relabel[u], relabel[v]) for u, v in internal.edges())
 
-        # Sparse links from each bot to humans
-        humans = list(range(human_count))
         for b in bot_nodes:
-            # Number of human links ~ Binomial(human_count, p)
             k = rng.binomial(n=human_count, p=config.bot_to_human_edge_prob)
             if k > 0:
                 targets = rng.choice(humans, size=min(k, human_count), replace=False)
                 G.add_edges_from((b, int(h)) for h in targets)
-
-        for b in bot_nodes:
             meta_records.append({"node": b, "is_bot": True, "bot_cluster_id": cluster_idx})
 
     meta_df = pd.DataFrame.from_records(meta_records)

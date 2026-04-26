@@ -90,14 +90,11 @@ def _compute_features_cached(nodes, edges):
     return features
 
 @st.cache_data(show_spinner=False)
-def _load_csv_cached(edges_bytes: bytes, nodes_bytes: bytes | None, edges_name: str, nodes_name: str | None):
+def _load_csv_cached(edges_bytes: bytes, nodes_bytes: bytes | None):
     import io
     edges_df = pd.read_csv(io.BytesIO(edges_bytes))
-    nodes_df = None
-    if nodes_bytes is not None:
-        nodes_df = pd.read_csv(io.BytesIO(nodes_bytes))
-    G, meta_df = load_graph_from_edge_csv(edges_df, nodes_df)
-    return G, meta_df
+    nodes_df = pd.read_csv(io.BytesIO(nodes_bytes)) if nodes_bytes is not None else None
+    return load_graph_from_edge_csv(edges_df, nodes_df)
 
 if run:
     if data_source == "Synthetic":
@@ -110,7 +107,7 @@ if run:
         with st.spinner("Loading CSV graph..."):
             edges_bytes = uploaded_edges.getvalue()
             nodes_bytes = uploaded_nodes.getvalue() if uploaded_nodes is not None else None
-            G, meta_df = _load_csv_cached(edges_bytes, nodes_bytes, uploaded_edges.name, uploaded_nodes.name if uploaded_nodes else None)
+            G, meta_df = _load_csv_cached(edges_bytes, nodes_bytes)
     elif data_source == "Reddit API":
         missing = [k for k, v in reddit_inputs.items() if k in ("client_id","client_secret","user_agent") and not v]
         if missing:

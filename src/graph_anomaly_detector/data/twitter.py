@@ -94,13 +94,6 @@ def fetch_search_interaction_graph(
                 G.add_node(replied)
                 G.add_edge(author, replied)
 
-            # Retweet/quote edges
-            ref = getattr(t, "referenced_tweets", None)
-            if ref:
-                # referenced_tweets contain dicts with id/type; we rely on includes to map id->author, but Tweepy v2 does not always expose that directly here.
-                # As a fallback, connect author to reply_to if present; else skip.
-                pass
-
             tweets_collected += 1
 
         next_token = getattr(resp.meta, "next_token", None)
