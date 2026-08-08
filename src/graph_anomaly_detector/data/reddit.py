@@ -73,7 +73,10 @@ def fetch_subreddit_interaction_graph(
                 continue
             user_set.add(author)
             G.add_node(author)
-            G.add_edge(submission_author, author)
+            # Replying to your own post is common and is not an interaction between two
+            # accounts, so skip the edge to avoid a self-loop that doubles the degree.
+            if author != submission_author:
+                G.add_edge(submission_author, author)
             count += 1
 
         if sleep_seconds > 0:
