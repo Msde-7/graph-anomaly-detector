@@ -12,5 +12,6 @@ class AppConfig(BaseModel):
     bot_internal_edge_prob: float = Field(0.35, ge=0.0, le=1.0, description="Edge probability within bot clusters")
     bot_to_human_edge_prob: float = Field(0.005, ge=0.0, le=1.0, description="Edge probability from bot to human")
 
-    contamination: float = Field(0.08, ge=0.0, le=0.5, description="Expected fraction of anomalies")
+    # IsolationForest rejects a contamination of exactly 0, so the lower bound is exclusive.
+    contamination: float = Field(0.08, gt=0.0, le=0.5, description="Expected fraction of anomalies")
     n_estimators: int = Field(300, ge=50, description="IsolationForest number of trees")
