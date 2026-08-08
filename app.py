@@ -4,21 +4,28 @@ from pathlib import Path
 # Ensure src is on path for local imports
 sys.path.append(str(Path(__file__).resolve().parent / "src"))
 
+import io
+
+import networkx as nx
 import streamlit as st
 import pandas as pd
+from sklearn.metrics import precision_recall_fscore_support
 
 from graph_anomaly_detector.config import AppConfig
 from graph_anomaly_detector.data.synthetic import generate_synthetic_graph
 from graph_anomaly_detector.data.ingest import load_graph_from_edge_csv
 from graph_anomaly_detector.data.reddit import fetch_subreddit_interaction_graph, RedditConfig
 from graph_anomaly_detector.data.twitter import fetch_search_interaction_graph, TwitterConfig
-from graph_anomaly_detector.features.graph_features import compute_node_features
+from graph_anomaly_detector.features.graph_features import (
+    MODEL_FEATURE_COLUMNS,
+    compute_node_features,
+)
 from graph_anomaly_detector.models.isolation_forest import fit_and_score
 from graph_anomaly_detector.visualization.graph_viz import render_pyvis
 
 st.set_page_config(page_title="Graph Anomaly Detector", layout="wide")
 
-st.title("Graph Anomaly Detector 🔍")
+st.title("Graph Anomaly Detector")
 st.caption("Synthetic / CSV / Reddit / Twitter → detect spam/bot clusters → visualize anomalies")
 
 with st.sidebar:
@@ -76,22 +83,21 @@ with st.sidebar:
     run = st.button("Generate/Load & Detect", type="primary")
 
 @st.cache_data(show_spinner=False)
-def _generate_graph_cached(_cfg: AppConfig):
-    G, meta_df = generate_synthetic_graph(_cfg)
-    return G, meta_df
+def _generate_graph_cached(config_json: str):
+    # Keyed on the serialized config. An argument named with a leading underscore is
+    # excluded from the cache key by Streamlit, which would pin the very first graph
+    # and silently ignore every later slider change.
+    return generate_synthetic_graph(AppConfig.model_validate_json(config_json))
 
 @st.cache_data(show_spinner=False)
-def _compute_features_cached(nodes, edges):
-    import networkx as nx
+def _compute_features_cached(nodes, edges, seed: int):
     G = nx.Graph()
     G.add_nodes_from(nodes)
     G.add_edges_from(edges)
-    features = compute_node_features(G)
-    return features
+    return compute_node_features(G, seed=seed)
 
 @st.cache_data(show_spinner=False)
 def _load_csv_cached(edges_bytes: bytes, nodes_bytes: bytes | None):
-    import io
     edges_df = pd.read_csv(io.BytesIO(edges_bytes))
     nodes_df = pd.read_csv(io.BytesIO(nodes_bytes)) if nodes_bytes is not None else None
     return load_graph_from_edge_csv(edges_df, nodes_df)
@@ -99,7 +105,7 @@ def _load_csv_cached(edges_bytes: bytes, nodes_bytes: bytes | None):
 if run:
     if data_source == "Synthetic":
         with st.spinner("Generating graph..."):
-            G, meta_df = _generate_graph_cached(config)
+            G, meta_df = _generate_graph_cached(config.model_dump_json())
     elif data_source == "CSV Upload":
         if uploaded_edges is None:
             st.error("Please upload an edges CSV.")
@@ -135,14 +141,18 @@ if run:
                 sleep_seconds=0.0,
             )
 
-    st.write(f"Nodes: {G.number_of_nodes()} | Edges: {G.number_of_edges()}")
+    if G.number_of_nodes() == 0:
+        st.error("That source returned no accounts. Try a different query or looser filters.")
+        st.stop()
 
     with st.spinner("Computing graph features..."):
-        features = _compute_features_cached(list(G.nodes()), list(G.edges()))
+        features = _compute_features_cached(
+            list(G.nodes()), list(G.edges()), config.random_seed
+        )
 
     with st.spinner("Training anomaly detector..."):
         model, scores, anomaly_labels = fit_and_score(
-            features,
+            features[list(MODEL_FEATURE_COLUMNS)],
             contamination=config.contamination,
             n_estimators=config.n_estimators,
             random_state=config.random_seed,
@@ -158,6 +168,21 @@ if run:
         .join(features)
         .join(meta_df.set_index("node"))
     )
+
+    # Held in session state so that touching a widget below does not discard the run.
+    # st.button is only True on the rerun it triggers, so anything rendered inside this
+    # block alone would vanish as soon as the user moved the "Show top K" slider.
+    st.session_state["detection"] = {"graph": G, "results": results}
+
+detection = st.session_state.get("detection")
+
+if detection is None:
+    st.info("Choose data source and configuration, then click Generate/Load & Detect.")
+else:
+    G = detection["graph"]
+    results = detection["results"]
+
+    st.write(f"Nodes: {G.number_of_nodes()} | Edges: {G.number_of_edges()}")
 
     # Align scores/flags to graph node iteration order
     node_order = list(G.nodes())
@@ -178,14 +203,20 @@ if run:
             cols.insert(2, "is_bot")
         st.dataframe(top_df[cols])
 
-        if "is_bot" in results.columns:
-            from sklearn.metrics import precision_recall_fscore_support
+        # Every loader supplies an is_bot column, defaulted to False where a source has no
+        # ground truth. Scoring against all-False labels reports 0.00 across the board and
+        # warns, so only report metrics once at least one account is actually labelled.
+        labels = results["is_bot"].astype(bool) if "is_bot" in results.columns else None
+        if labels is not None and labels.any():
             p, r, f1, _ = precision_recall_fscore_support(
-                results["is_bot"].astype(int),
+                labels.astype(int),
                 results["is_anomaly"].astype(int),
                 average="binary",
+                zero_division=0,
             )
             st.markdown(f"**Precision**: {p:.2f} | **Recall**: {r:.2f} | **F1**: {f1:.2f}")
+        else:
+            st.caption("No labelled accounts in this dataset, so precision and recall are not shown.")
 
         st.download_button(
             "Download results CSV",
@@ -193,5 +224,3 @@ if run:
             file_name="anomaly_results.csv",
             mime="text/csv",
         )
-else:
-    st.info("Choose data source and configuration, then click Generate/Load & Detect.")
