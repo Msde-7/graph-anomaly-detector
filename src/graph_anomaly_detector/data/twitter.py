@@ -42,7 +42,9 @@ def fetch_search_interaction_graph(
     user_id_to_username: Dict[str, str] = {}
 
     while tweets_collected < max_tweets:
-        batch = min(100, max_tweets - tweets_collected)
+        # search_recent_tweets only accepts max_results between 10 and 100. Pages often come
+        # back short, so the remaining count can fall under 10 and would be rejected.
+        batch = max(10, min(100, max_tweets - tweets_collected))
         resp = client.search_recent_tweets(
             query=query,
             max_results=batch,
@@ -71,6 +73,15 @@ def fetch_search_interaction_graph(
             for u in resp.includes["users"]:
                 user_id_to_username[str(u.id)] = u.username
 
+        # The referenced_tweets.id.author_id expansion returns the retweeted and quoted
+        # tweets themselves, which is how a retweet is traced back to its original author.
+        referenced_authors: Dict[str, str] = {}
+        if resp.includes and "tweets" in resp.includes:
+            for rt in resp.includes["tweets"]:
+                rt_author = getattr(rt, "author_id", None)
+                if rt_author is not None:
+                    referenced_authors[str(rt.id)] = str(rt_author)
+
         for t in resp.data:
             author_id = getattr(t, "author_id", None)
             if author_id is None:
@@ -78,21 +89,30 @@ def fetch_search_interaction_graph(
             author = user_id_to_username.get(str(author_id), str(author_id))
             G.add_node(author)
 
-            # Mentions edges
-            ents = getattr(t, "entities", None)
-            if ents and "mentions" in ents and ents["mentions"]:
-                for m in ents["mentions"]:
-                    uname = m.get("username")
-                    if uname:
-                        G.add_node(uname)
-                        G.add_edge(author, uname)
+            counterparts = []
 
-            # Reply-to edge
+            # Mentions
+            ents = getattr(t, "entities", None)
+            if ents and ents.get("mentions"):
+                counterparts.extend(m.get("username") for m in ents["mentions"])
+
+            # Reply-to
             reply_to_id = getattr(t, "in_reply_to_user_id", None)
             if reply_to_id is not None:
-                replied = user_id_to_username.get(str(reply_to_id), str(reply_to_id))
-                G.add_node(replied)
-                G.add_edge(author, replied)
+                counterparts.append(user_id_to_username.get(str(reply_to_id), str(reply_to_id)))
+
+            # Retweet or quote of another account
+            for ref in getattr(t, "referenced_tweets", None) or []:
+                ref_author_id = referenced_authors.get(str(getattr(ref, "id", "")))
+                if ref_author_id is not None:
+                    counterparts.append(user_id_to_username.get(ref_author_id, ref_author_id))
+
+            for counterpart in counterparts:
+                # Mentioning or replying to yourself is not an interaction between two
+                # accounts, so skip it rather than adding a degree-inflating self-loop.
+                if counterpart and counterpart != author:
+                    G.add_node(counterpart)
+                    G.add_edge(author, counterpart)
 
             tweets_collected += 1
 
