@@ -4,7 +4,7 @@ Build a user/content graph from synthetic data, CSV files, or live APIs (Reddit,
 
 ## Features
 - Data sources: Synthetic generator, CSV upload, Reddit API, Twitter/X API
-- Features: degree, clustering coefficient, PageRank, approximate betweenness, Louvain community id
+- Features: degree, clustering coefficient, PageRank, approximate betweenness. Louvain community id is reported alongside them for context but is not fed to the model, since its value is an arbitrary label rather than a magnitude
 - Anomaly detection: IsolationForest with tunable contamination and number of trees
 - Visualization: interactive PyVis network; anomalies highlighted; CSV export of results
 - Evaluation (optional): if `is_bot` labels exist in nodes data, compute precision/recall/F1
@@ -44,7 +44,9 @@ streamlit run app.py
 
 ## Notes
 - IDs are treated as strings internally (numeric or text are fine)
-- API data does not include ground-truth labels; metrics require a Nodes CSV with `is_bot`
+- Edge rows with a blank endpoint and self-loops are dropped during CSV load
+- API data does not include ground-truth labels, so metrics only appear once at least one node is labelled `is_bot`
+- Runs are reproducible for a given random seed, including the Louvain community assignment
 - Large graphs can be slow to render; reduce node count or use stricter filters
 
 ## How it works (brief)
