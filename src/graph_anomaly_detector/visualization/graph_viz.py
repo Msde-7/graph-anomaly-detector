@@ -32,7 +32,6 @@ def render_pyvis(
     sizes = _scale(degrees, 6.0, 22.0)
 
     net = Network(height=f"{height_px}px", width="100%", bgcolor="#0e1117", font_color="#eaecef")
-    net.barnes_hut()
 
     # Base palette
     normal_color = "#8b949e"
@@ -75,6 +74,8 @@ def render_pyvis(
             "color": {"color": "#2f3542"},
             "smooth": False
         },
+        # set_options replaces the whole options object, so the Barnes-Hut layout has to be
+        # configured here. Calling net.barnes_hut() beforehand would just be discarded.
         "physics": {
             "stabilization": True,
             "barnesHut": {
