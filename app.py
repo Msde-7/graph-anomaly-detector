@@ -151,7 +151,7 @@ if run:
         )
 
     with st.spinner("Training anomaly detector..."):
-        model, scores, anomaly_labels = fit_and_score(
+        _, scores, anomaly_labels = fit_and_score(
             features[list(MODEL_FEATURE_COLUMNS)],
             contamination=config.contamination,
             n_estimators=config.n_estimators,
@@ -198,7 +198,8 @@ else:
         st.subheader("Top Suspicious Accounts")
         top_k = st.slider("Show top K", min_value=5, max_value=100, value=20, step=5)
         top_df = results.sort_values("anomaly_score", ascending=False).head(top_k)
-        cols = ["anomaly_score", "is_anomaly", "degree", "pagerank", "clustering_coef", "community_id"]
+        cols = ["anomaly_score", "is_anomaly", "degree", "triangles", "core_number",
+                "pagerank", "clustering_coef", "community_id"]
         if "is_bot" in results.columns:
             cols.insert(2, "is_bot")
         st.dataframe(top_df[cols])
